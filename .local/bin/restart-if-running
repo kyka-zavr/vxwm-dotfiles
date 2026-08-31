@@ -1,0 +1,59 @@
+#!/bin/sh
+# restart-if-running — kill process only if it was running, then start it again.
+# Does nothing if the process was not running (never auto-starts cold).
+#
+# Usage:
+#   restart-if-running NAME [COMMAND [ARGS...]]
+#   NAME     = pgrep -x pattern (process name)
+#   COMMAND  = what to exec (default: NAME)
+#
+# Examples:
+#   restart-if-running materialgram
+#   restart-if-running thunar
+#   restart-if-running materialgram materialgram -- %u
+set -eu
+
+if [ "${1:-}" = "" ] || [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+	sed -n '2,14p' "$0" | sed 's/^# \?//'
+	exit 0
+fi
+
+name=$1
+shift
+if [ "$#" -gt 0 ]; then
+	cmd=$1
+	shift
+else
+	cmd=$name
+fi
+
+# Was it running?
+if ! pgrep -x "$name" >/dev/null 2>&1; then
+	exit 0
+fi
+
+# Hard stop
+pkill -x "$name" 2>/dev/null || true
+i=0
+while pgrep -x "$name" >/dev/null 2>&1 && [ "$i" -lt 40 ]; do
+	sleep 0.05
+	i=$((i + 1))
+done
+if pgrep -x "$name" >/dev/null 2>&1; then
+	pkill -9 -x "$name" 2>/dev/null || true
+	sleep 0.1
+fi
+
+# Relaunch only if binary exists
+if ! command -v "$cmd" >/dev/null 2>&1; then
+	exit 0
+fi
+
+# Detach fully so parent scripts don't wait
+if [ "$#" -gt 0 ]; then
+	("$cmd" "$@" >/dev/null 2>&1 &) &
+else
+	("$cmd" >/dev/null 2>&1 &) &
+fi
+
+exit 0

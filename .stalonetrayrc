@@ -1,0 +1,14 @@
+# System tray — fixed to screen top-left (vxwm pins it so infinite canvas won't drag it)
+geometry 1x1+12+12
+grow_gravity NW
+icon_gravity NW
+icon_size 18
+slot_size 22
+sticky true
+skip_taskbar true
+decorations none
+background "#1a1a1a"
+transparent false
+vertical false
+window_strut none
+kludges force_icons_size,fix_window_pos

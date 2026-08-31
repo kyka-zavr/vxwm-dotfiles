@@ -1,0 +1,6 @@
+#!/bin/sh
+# (Re)start the polybar top bar with whatever colors pywal currently has cached.
+pkill -x polybar 2>/dev/null
+while pgrep -x polybar >/dev/null 2>&1; do sleep 0.05; done
+polybar main >/tmp/polybar-main.log 2>&1 &
+disown

@@ -1,0 +1,87 @@
+#!/bin/sh
+# dmenu-above — dmenu docked right under the polybar bar.
+# Usage:  data | dmenu-above [-p prompt] [-l lines] [-H]
+set -eu
+
+. "$HOME/.local/bin/walcolors" 2>/dev/null || true
+nb=${nb:-#222222}
+nf=${nf:-#bbbbbb}
+sb=${sb:-#005577}
+sf=${sf:-#eeeeee}
+
+FN="monospace:size=10"
+RF="${XDG_CONFIG_HOME:-$HOME/.config}/rice/font"
+if [ -f "$RF" ]; then
+	fam=$(grep -v '^#' "$RF" | grep -v '^$' | sed -n '1p')
+	sz=$(grep -v '^#' "$RF" | grep -v '^$' | sed -n '2p')
+	case "$fam" in "" | -*) ;; *)
+		case "$sz" in "" | *[!0-9]*) ;; *) FN="$fam:size=$sz" ;; esac
+		;;
+	esac
+fi
+
+PROMPT=""
+LINES=""
+HORIZONTAL=0
+while [ $# -gt 0 ]; do
+	case "$1" in
+	-p) PROMPT=$2; shift 2 ;;
+	-l) LINES=$2; shift 2 ;;
+	-H | --horizontal) HORIZONTAL=1; shift ;;
+	*) shift ;;
+	esac
+done
+
+LIST=$(mktemp /tmp/dma.XXXXXX)
+OUT=$(mktemp /tmp/dma.XXXXXX)
+BEF=$(mktemp /tmp/dma.XXXXXX)
+AFT=$(mktemp /tmp/dma.XXXXXX)
+trap 'rm -f "$LIST" "$OUT" "$BEF" "$AFT"' EXIT
+
+cat >"$LIST"
+[ -s "$LIST" ] || exit 0
+
+# anchor to the real polybar window — NOT vxwm's own (disabled, off-screen)
+# internal bar, which is what this used to search for and is why every
+# dmenu-above caller (powermenu, cheatsheet, setfont, clipmenu) rendered
+# off-screen at y=-38 and looked "broken".
+BAR=$(xdotool search --class "Polybar" 2>/dev/null | head -1)
+xdotool search --class dmenu 2>/dev/null | sort >"$BEF" || true
+
+set -- -i -nb "$nb" -nf "$nf" -sb "$sb" -sf "$sf" -fn "$FN"
+[ -n "$PROMPT" ] && set -- "$@" -p "$PROMPT"
+
+if [ "$HORIZONTAL" -eq 1 ]; then
+	set -- -b "$@"
+else
+	case "$LINES" in "" | *[!0-9]*) LINES=6 ;; esac
+	[ "$LINES" -gt 12 ] && LINES=12
+	[ "$LINES" -lt 1 ] && LINES=1
+	set -- -b -l "$LINES" "$@"
+fi
+
+dmenu "$@" <"$LIST" >"$OUT" &
+DPID=$!
+
+if [ -n "$BAR" ]; then
+	eval "$(xdotool getwindowgeometry --shell "$BAR")"
+	BX=$X BY=$Y BW=$WIDTH BH=$HEIGHT
+	i=0
+	while [ "$i" -lt 40 ]; do
+		xdotool search --class dmenu 2>/dev/null | sort >"$AFT" || true
+		DMWIN=$(comm -13 "$BEF" "$AFT" 2>/dev/null | head -1)
+		if [ -n "$DMWIN" ]; then
+			sleep 0.02
+			eval "$(xdotool getwindowgeometry --shell "$DMWIN")"
+			NY=$((BY + BH + 4))
+			xdotool windowmove "$DMWIN" "$BX" "$NY" 2>/dev/null || true
+			xdotool windowsize "$DMWIN" "$BW" "$HEIGHT" 2>/dev/null || true
+			break
+		fi
+		i=$((i + 1))
+		sleep 0.015
+	done
+fi
+
+wait "$DPID" || true
+cat "$OUT" 2>/dev/null || true

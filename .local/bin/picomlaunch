@@ -1,0 +1,11 @@
+#!/bin/sh
+BASE_CONF="$HOME/.config/picom/picom.conf"
+SHADOW_COLOR="#000000"
+
+[ -f "$HOME/.cache/wal/colors.sh" ] && . "$HOME/.cache/wal/colors.sh" && SHADOW_COLOR="${color4:-#000000}"
+
+TMP_CONF="/tmp/picom_${USER}.conf"
+cat "$BASE_CONF" > "$TMP_CONF"
+echo "" >> "$TMP_CONF"
+echo "shadow-color = \"$SHADOW_COLOR\";" >> "$TMP_CONF"
+exec picom --config "$TMP_CONF"

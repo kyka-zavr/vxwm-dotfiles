@@ -1,0 +1,78 @@
+#!/bin/sh
+# Install NVIDIA proprietary userspace + nvidia-open kernel modules (Arch, linux-zen)
+# Run:  install-nvidia
+# Needs sudo. Reboot after success.
+set -e
+
+if [ "$(id -u)" -eq 0 ]; then
+  echo "Run as your user (script will call sudo), not as root."
+  exit 1
+fi
+
+echo "==> Packages (nvidia-open-dkms for linux-zen + nvidia-utils)"
+sudo pacman -S --needed --noconfirm \
+  linux-zen-headers \
+  dkms \
+  nvidia-open-dkms \
+  nvidia-utils \
+  nvidia-settings \
+  libxnvctrl \
+  egl-x11
+
+echo "==> Blacklist nouveau"
+echo 'blacklist nouveau
+options nouveau modeset=0' | sudo tee /etc/modprobe.d/blacklist-nouveau.conf >/dev/null
+
+echo "==> Early KMS for NVIDIA"
+# drop-in for kernel cmdline if using systemd-boot or grub — try common paths
+if [ -d /boot/loader/entries ]; then
+  for f in /boot/loader/entries/*.conf; do
+    [ -f "$f" ] || continue
+    if ! grep -q 'nvidia_drm.modeset' "$f" 2>/dev/null; then
+      echo "    patching $f"
+      sudo sed -i '/^options / s/$/ nvidia_drm.modeset=1 nvidia_drm.fbdev=1/' "$f"
+    else
+      echo "    already set: $f"
+    fi
+  done
+elif [ -f /etc/default/grub ]; then
+  if ! grep -q 'nvidia_drm.modeset' /etc/default/grub; then
+    sudo sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT="\([^"]*\)"/GRUB_CMDLINE_LINUX_DEFAULT="\1 nvidia_drm.modeset=1 nvidia_drm.fbdev=1"/' /etc/default/grub
+    sudo grub-mkconfig -o /boot/grub/grub.cfg
+  fi
+else
+  echo "    WARN: could not find bootloader config — add manually to kernel cmdline:"
+  echo "      nvidia_drm.modeset=1 nvidia_drm.fbdev=1"
+fi
+
+echo "==> mkinitcpio (rebuild initramfs)"
+sudo mkinitcpio -P
+
+echo "==> Optional X11 snippet (modeset, TearFree-ish via composition)"
+sudo mkdir -p /etc/X11/xorg.conf.d
+# Always refresh nvidia X11 snippet (UseEdidDpi: laptop panels otherwise report ~144 DPI)
+sudo tee /etc/X11/xorg.conf.d/20-nvidia.conf >/dev/null <<'EOF'
+Section "OutputClass"
+    Identifier "nvidia"
+    MatchDriver "nvidia-drm"
+    Driver "nvidia"
+    Option "AllowEmptyInitialConfiguration"
+    Option "PrimaryGPU" "yes"
+    Option "UseEdidDpi" "False"
+    Option "DPI" "96 x 96"
+    ModulePath "/usr/lib/nvidia/xorg"
+    ModulePath "/usr/lib/xorg/modules"
+EndSection
+EOF
+
+
+echo ""
+echo "=============================================="
+echo "  NVIDIA install done. REBOOT now:"
+echo "    reboot"
+echo ""
+echo "  After reboot check:"
+echo "    lsmod | grep nvidia"
+echo "    nvidia-smi"
+echo "    # should NOT see: nouveau"
+echo "=============================================="

@@ -1,0 +1,128 @@
+#!/bin/sh
+if [ -z "$1" ]; then
+  echo "Usage: setwal /path/to/image.jpg"
+  exit 1
+fi
+[ -f "$1" ] || { echo "file not found: $1"; exit 1; }
+
+# Ensure pywal templates exist (fresh installs sometimes miss gtk.css)
+ensure_wal_templates() {
+  TDIR="$HOME/.config/wal/templates"
+  mkdir -p "$TDIR"
+  for src in \
+    "$HOME/dotfiles/.config/wal/templates" \
+    "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/../../.config/wal/templates"
+  do
+    [ -d "$src" ] || continue
+    for f in gtk.css dunstrc dwm.Xresources colors-rofi.rasi betterlockscreenrc; do
+      if [ -f "$src/$f" ] && [ ! -f "$TDIR/$f" ]; then
+        cp -f "$src/$f" "$TDIR/$f"
+      fi
+    done
+    # always refresh gtk template from rice if present (keeps theme in sync)
+    [ -f "$src/gtk.css" ] && cp -f "$src/gtk.css" "$TDIR/gtk.css"
+    break
+  done
+}
+ensure_wal_templates
+
+wal -i "$1" -q 2>/dev/null || wal -i "$1" 2>&1
+
+feh --bg-fill "$1" 2>/dev/null
+
+XRES="$HOME/.cache/wal/colors.Xresources"
+[ -f "$XRES" ] && xrdb -merge "$XRES"
+
+DWMXRES="$HOME/.cache/wal/dwm.Xresources"
+[ -f "$DWMXRES" ] && xrdb -merge "$DWMXRES"
+
+xdotool key --clearmodifiers Super_L+F5 2>/dev/null
+
+# Rebuild dunst config: base (global + defaults) + pywal urgency colors
+# (dunst 1.13 does not support bare "include path" the old way)
+DUNST_BASE="$HOME/.config/dunst/dunstrc.base"
+DUNST_CONF="$HOME/.config/dunst/dunstrc"
+DUNST_WAL="$HOME/.cache/wal/dunstrc"
+
+if [ -f "$DUNST_BASE" ] && [ -f "$DUNST_WAL" ]; then
+  # drop default urgency blocks from base, then append wal colors
+  awk '
+    /^\[urgency_/ { skip=1; next }
+    /^\[/ { skip=0 }
+    !skip { print }
+  ' "$DUNST_BASE" >"$DUNST_CONF"
+  echo "" >>"$DUNST_CONF"
+  cat "$DUNST_WAL" >>"$DUNST_CONF"
+elif [ -f "$DUNST_WAL" ]; then
+  # fallback: keep current conf globals if base missing
+  if [ -f "$DUNST_CONF" ]; then
+    awk '
+      /^\[urgency_/ { skip=1; next }
+      /^\[/ { skip=0 }
+      !skip { print }
+    ' "$DUNST_CONF" >"$DUNST_CONF.tmp"
+    echo "" >>"$DUNST_CONF.tmp"
+    cat "$DUNST_WAL" >>"$DUNST_CONF.tmp"
+    mv "$DUNST_CONF.tmp" "$DUNST_CONF"
+  fi
+fi
+
+pkill -x dunst 2>/dev/null
+dunst &
+
+# picom shadow-color is baked into a temp config at launch — restart to pick up pywal
+pkill -x picom 2>/dev/null
+picomlaunch &
+
+# polybar reads colors via ~/.cache/wal/colors-polybar (include-file) — restart to pick it up
+command -v barlaunch >/dev/null 2>&1 && barlaunch
+
+# GTK3 — pywal template → ~/.config/gtk-3.0/gtk.css
+GTK_WAL="$HOME/.cache/wal/gtk.css"
+GTK_DIR="$HOME/.config/gtk-3.0"
+mkdir -p "$GTK_DIR"
+if [ -f "$GTK_WAL" ]; then
+  # refuse to install unexpanded template ({background} left by failed wal)
+  if grep -q '{background}' "$GTK_WAL" 2>/dev/null; then
+    echo "setwal: WARN gtk.css still has placeholders — wal may have failed; Thunar theme skipped" >&2
+  else
+    cp -f "$GTK_WAL" "$GTK_DIR/gtk.css"
+  fi
+else
+  echo "setwal: WARN ~/.cache/wal/gtk.css missing — copy template:" >&2
+  echo "  cp ~/dotfiles/.config/wal/templates/gtk.css ~/.config/wal/templates/" >&2
+  echo "  then: setwal /path/to/wallpaper" >&2
+fi
+# Always prefer dark base so our CSS is visible
+if [ -f "$HOME/dotfiles/.config/gtk-3.0/settings.ini" ]; then
+  cp -f "$HOME/dotfiles/.config/gtk-3.0/settings.ini" "$GTK_DIR/settings.ini"
+elif [ ! -f "$GTK_DIR/settings.ini" ]; then
+  printf '%s\n' \
+    '[Settings]' \
+    'gtk-application-prefer-dark-theme=1' \
+    'gtk-theme-name=Adwaita-dark' >"$GTK_DIR/settings.ini"
+fi
+
+# betterlockscreen — strip the '#' pywal leaves on hex colors (its rc format
+# wants bare RRGGBB[AA]), then re-cache the blurred lock image for this wallpaper
+BLS_WAL="$HOME/.cache/wal/betterlockscreenrc"
+if [ -f "$BLS_WAL" ] && command -v betterlockscreen >/dev/null 2>&1; then
+  sed -E 's/#([0-9A-Fa-f]{6,8})/\1/g' "$BLS_WAL" >"$HOME/.config/betterlockscreenrc"
+  betterlockscreen -u "$1" >/dev/null 2>&1 &
+fi
+
+# Reload GTK apps that cache CSS at start — only if they were already running
+# (never cold-starts materialgram / thunar)
+if command -v restart-if-running >/dev/null 2>&1; then
+  restart-if-running thunar
+  restart-if-running materialgram
+else
+  for app in thunar materialgram; do
+    if pgrep -x "$app" >/dev/null 2>&1; then
+      pkill -x "$app" 2>/dev/null || true
+      sleep 0.15
+      pkill -9 -x "$app" 2>/dev/null || true
+      command -v "$app" >/dev/null 2>&1 && ("$app" >/dev/null 2>&1 &) &
+    fi
+  done
+fi

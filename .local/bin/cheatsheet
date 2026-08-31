@@ -1,0 +1,90 @@
+#!/bin/sh
+# cheatsheet — all keybinds, blocks + search, looks like clipmenu/fontpicker
+# Bind: Super+/
+set -eu
+
+# Section headers start with "──" (not selectable as actions)
+# Type to search (dmenu filters lines). Super = Win.
+cheat_list() {
+	cat <<'EOF'
+── launch ──
+Alt+Space                  app launcher (rofi)
+Super+Return               terminal (kitty)
+Super+v                    clipboard (clipmenu)
+Super+e                    file manager (thunar)
+Super+w                    Chrome
+Super+c                    VSCodium
+Super+s                    Spotify
+Super+Shift+w              wallpaper picker (wpick wheel)
+Super+Shift+t              font picker (setfont)
+Super+Shift+s              screenshot (now)
+Super+Shift+Print          screenshot in 3s (for menus)
+Super+`                    this cheatsheet
+Super+Escape               power menu
+
+── window ──
+Super+j / k                focus next / previous
+Super+Tab                  focus next (same as j — recenters canvas on it)
+Super+- / =                shrink / grow master
+Super+i / d                more / fewer masters
+Super+l                    lock screen (betterlockscreen)
+Super+q                    close window
+Super+Shift+q              toggle floating (enhanced)
+Super+Shift+Alt+space      toggle floating (plain)
+Super+Shift+f              fullscreen
+Super+←↑↓→                 move window (pixels)
+Super+Ctrl+←↑↓→            resize window (pixels)
+
+── layout ──
+Super+Shift+Alt+t          floating layout
+Super+Shift+Alt+f          tiled layout
+Super+Shift+m              monocle
+Super+Shift+space          cycle layout
+
+── tags ──
+Super+1…9                  view tag
+Super+Shift+1…9            move window to tag
+Super+Ctrl+1…9             toggle tag in view
+
+── canvas (infinite desktop) ──
+Super+r                    home canvas (back to 0,0)
+Super+Shift+←↑↓→           pan canvas (keyboard)
+Super+Shift+d              center focused window on canvas
+Super+Ctrl+z               pin window (stays on screen while panning)
+drag on empty desktop      pan canvas (plain left-click drag)
+Super+Shift+drag           pan canvas (works over any window too)
+
+── mouse (on a window) ──
+Super+click1+drag          move window
+Super+click2                toggle floating (on a window)
+Super+click3+drag          resize window
+
+── look ──
+Super+F5                   reload pywal colors everywhere
+
+── media (no modifier) ──
+Vol+ / Vol−                volume up / down
+Mute                       mute toggle
+Bri+ / Bri−                brightness up / down
+
+── session ──
+Super+Ctrl+Shift+q         quit vxwm
+Super+Escape               power menu (Lock / Exit / Suspend / Reboot / Poweroff)
+EOF
+}
+
+# compact strip above bar (not full-screen)
+choice=$(cheat_list | dmenu-above -p "keys:" -l 6) || true
+[ -n "${choice:-}" ] || exit 0
+
+# ignore section headers
+case "$choice" in
+──* | "") exit 0 ;;
+esac
+
+# optional: toast the line you picked (handy when searching)
+if command -v dunstify >/dev/null 2>&1; then
+	dunstify -a keys -u low -t 2500 -r 9920 "keybind" "$choice"
+elif command -v notify-send >/dev/null 2>&1; then
+	notify-send -a keys -t 2500 "keybind" "$choice"
+fi

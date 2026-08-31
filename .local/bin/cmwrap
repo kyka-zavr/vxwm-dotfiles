@@ -1,0 +1,4 @@
+#!/bin/sh
+# clipmenu launcher — simple dmenu above bar (same as before)
+set -eu
+exec dmenu-above -l "${CM_HISTLENGTH:-4}" "$@"

@@ -1,0 +1,30 @@
+#!/bin/sh
+# bright — change backlight (0–100%)
+#   bright up | down | [N%]
+set -eu
+
+step=${BRIGHT_STEP:-10}
+
+get_pct() {
+	brightnessctl -m 2>/dev/null | awk -F, '{ gsub(/%/,"",$4); print int($4+0); exit }'
+}
+
+case "${1:-}" in
+up | +)
+	brightnessctl -q set "+${step}%"
+	;;
+down | -)
+	brightnessctl -q set "${step}%-"
+	;;
+[0-9] | [0-9]% | [0-9][0-9] | [0-9][0-9]% | 100 | 100%)
+	brightnessctl -q set "${1%\%}%"
+	;;
+"" | get)
+	get_pct
+	exit 0
+	;;
+*)
+	echo "usage: bright up|down|[0-100]" >&2
+	exit 2
+	;;
+esac

@@ -1,0 +1,399 @@
+#!/usr/bin/env python3
+"""wpick — wallpaper picker.
+
+Interactive mode (no args): a "wheel" carousel — all wallpapers scroll past,
+the selected one centered and larger. Thumbnails are decoded once and cached
+to ~/.cache/wpick-thumbs (keyed by path+mtime), so navigation never re-reads
+the original files — this is what made the old feh-based picker crawl: it
+decoded a fresh full-res image (some are 4K PNGs, several MB, on a spinning
+disk) on every arrow press.
+
+  wpick           interactive wheel picker
+  wpick -r        random wallpaper, apply immediately, no UI
+  wpick -d DIR    use this wallpapers directory
+  wpick IMAGE     apply this file directly
+  wpick -h        help
+
+Keys (interactive): Left/Right browse (wraps around) · Enter apply+close
+                     r random · Escape/q cancel
+"""
+import argparse
+import hashlib
+import os
+import random
+import signal
+import subprocess
+import sys
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import Gdk, GdkPixbuf, GLib, Gtk  # noqa: E402
+
+EXTS = (
+    ".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif", ".jxl", ".tif", ".tiff", ".avif",
+)
+THUMB_CACHE = os.path.expanduser("~/.cache/wpick-thumbs")
+CENTER_H = 160  # cached/base thumbnail height in px — center slot draws at this size
+SLOTS = 3  # slots visible on EACH side of center (7 total on screen)
+GAP = 10  # px of breathing room between adjacent slot EDGES (positions are laid out
+          # cumulatively from real thumbnail widths, so unlike a fixed center-to-center
+          # spacing this can never overlap regardless of each image's aspect ratio)
+FALLOFF = [1.0, 0.74, 0.55, 0.40, 0.30, 0.22, 0.16]  # scale by distance from center
+ASSUMED_MAX_ASPECT = 1.8  # widest wallpaper aspect we size the (fixed, non-resizable) window for
+PIDFILE = "/tmp/wpick.pid"
+
+
+def _slot_scale(offset):
+    return FALLOFF[min(abs(offset), len(FALLOFF) - 1)]
+
+
+def _max_canvas_width(center_h):
+    extent = center_h * _slot_scale(0) * ASSUMED_MAX_ASPECT / 2
+    for offset in range(1, SLOTS + 1):
+        extent += GAP + center_h * _slot_scale(offset) * ASSUMED_MAX_ASPECT
+    # hard cap regardless of the estimate above — this laptop's screen is 1366px
+    # wide and the window is non-resizable, so never risk spilling off-screen
+    return min(int(extent * 2), 1280)
+
+
+def notify(summary, body=""):
+    if shutil_which("notify-send"):
+        subprocess.Popen(["notify-send", "-a", "wpick", "-t", "2500", "--", summary, body])
+    else:
+        print(f"{summary}: {body}")
+
+
+def shutil_which(cmd):
+    for d in os.environ.get("PATH", "").split(os.pathsep):
+        if os.path.isfile(os.path.join(d, cmd)) and os.access(os.path.join(d, cmd), os.X_OK):
+            return True
+    return False
+
+
+def list_wallpapers(directory):
+    if not os.path.isdir(directory):
+        return []
+    files = [
+        os.path.join(directory, f)
+        for f in os.listdir(directory)
+        if f.lower().endswith(EXTS)
+    ]
+    files.sort()
+    return files
+
+
+def apply_wallpaper(path):
+    subprocess.Popen(["setwal", path])
+    notify("Wallpaper set", os.path.basename(path))
+
+
+def pick_random(files, exclude=None):
+    choices = [f for f in files if f != exclude] or files
+    return random.choice(choices)
+
+
+# ── interactive wheel picker ────────────────────────────────────────────
+
+def thumb_cache_path(src):
+    st = os.stat(src)
+    key = hashlib.sha1(f"{src}:{st.st_mtime_ns}:{CENTER_H}".encode()).hexdigest()
+    return os.path.join(THUMB_CACHE, key + ".png")
+
+
+def load_or_build_thumb(src):
+    tp = thumb_cache_path(src)
+    if os.path.exists(tp):
+        try:
+            return GdkPixbuf.Pixbuf.new_from_file(tp)
+        except GLib.Error:
+            pass
+    try:
+        pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(src, -1, CENTER_H, True)
+    except GLib.Error:
+        return None
+    try:
+        os.makedirs(THUMB_CACHE, exist_ok=True)
+        pb.savev(tp, "png", [], [])
+    except GLib.Error:
+        pass
+    return pb
+
+
+class Wheel(Gtk.Window):
+    def __init__(self, files):
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+        self.files = files
+        self.index = 0
+        self.thumbs = {}
+
+        self.set_title("wpick")
+        self.set_decorated(False)
+        self.set_skip_taskbar_hint(True)
+        self.set_skip_pager_hint(True)
+        self.set_resizable(False)
+        self.set_keep_above(True)
+
+        bg, fg, accent = self._colors()
+        self.bg = Gdk.RGBA()
+        self.bg.parse(bg)
+        self.fg = Gdk.RGBA()
+        self.fg.parse(fg)
+        self.accent = Gdk.RGBA()
+        self.accent.parse(accent)
+
+        css = f"""
+        window {{ background-color: {bg}; }}
+        label {{ color: {fg}; font-family: "Adwaita Sans"; }}
+        label.hint {{ font-size: 9pt; opacity: 0.65; }}
+        label.name {{ font-size: 11pt; }}
+        """.encode()
+        provider = Gtk.CssProvider()
+        provider.load_from_data(css)
+        Gtk.StyleContext.add_provider_for_screen(
+            Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+        vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        vbox.set_margin_top(18)
+        vbox.set_margin_bottom(14)
+        vbox.set_margin_start(10)
+        vbox.set_margin_end(10)
+        self.add(vbox)
+
+        canvas_w = _max_canvas_width(CENTER_H)
+        canvas_h = CENTER_H + 60
+        self.area = Gtk.DrawingArea()
+        self.area.set_size_request(canvas_w, canvas_h)
+        self.area.connect("draw", self._on_draw)
+        vbox.pack_start(self.area, False, False, 0)
+
+        self.name_label = Gtk.Label(label="")
+        self.name_label.get_style_context().add_class("name")
+        vbox.pack_start(self.name_label, False, False, 0)
+
+        hint = Gtk.Label(label="← → browse   ·   Enter set   ·   r random   ·   Esc cancel")
+        hint.get_style_context().add_class("hint")
+        vbox.pack_start(hint, False, False, 0)
+
+        self.loading_label = Gtk.Label(label="")
+        self.loading_label.get_style_context().add_class("hint")
+        vbox.pack_start(self.loading_label, False, False, 0)
+
+        self.connect("key-press-event", self._on_key)
+        self.connect("destroy", lambda *_a: self._quit())
+
+    def _colors(self):
+        import json
+        try:
+            pal = json.load(open(os.path.expanduser("~/.cache/wal/colors.json")))
+            return pal["special"]["background"], pal["special"]["foreground"], pal["colors"]["color4"]
+        except Exception:
+            return "#0b0404", "#c2c0c0", "#88c0d0"
+
+    def _quit(self):
+        try:
+            os.remove(PIDFILE)
+        except OSError:
+            pass
+        Gtk.main_quit()
+
+    def start_loading(self):
+        self.loading_label.set_text(f"preparing thumbnails… 0/{len(self.files)}")
+        self._warm_iter = iter(enumerate(self.files))
+        self._warmed = 0
+        GLib.idle_add(self._warm_step)
+
+    def _warm_step(self):
+        try:
+            i, path = next(self._warm_iter)
+        except StopIteration:
+            self.loading_label.set_text("")
+            self._update_name()
+            self.area.queue_draw()
+            return False
+        pb = load_or_build_thumb(path)
+        if pb is not None:
+            self.thumbs[path] = pb
+        self._warmed += 1
+        self.loading_label.set_text(f"preparing thumbnails… {self._warmed}/{len(self.files)}")
+        if abs(i - self.index) <= SLOTS:
+            self.area.queue_draw()
+        return True
+
+    def _update_name(self):
+        if not self.files:
+            return
+        path = self.files[self.index]
+        self.name_label.set_text(f"{os.path.basename(path)}   ({self.index + 1}/{len(self.files)})")
+
+    def _on_key(self, _w, ev):
+        keyval = ev.keyval
+        if keyval in (Gdk.KEY_Escape, Gdk.KEY_q):
+            self._quit()
+        elif keyval in (Gdk.KEY_Left, Gdk.KEY_h):
+            self._move(-1)
+        elif keyval in (Gdk.KEY_Right, Gdk.KEY_l):
+            self._move(1)
+        elif keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            if self.files:
+                apply_wallpaper(self.files[self.index])
+            self._quit()
+        elif keyval == Gdk.KEY_r:
+            if self.files:
+                target = pick_random(self.files, exclude=self.files[self.index])
+                self.index = self.files.index(target)
+                self._update_name()
+                self.area.queue_draw()
+
+    def _move(self, delta):
+        if not self.files:
+            return
+        self.index = (self.index + delta) % len(self.files)
+        self._update_name()
+        self.area.queue_draw()
+
+    def _on_draw(self, _area, cr):
+        alloc = self.area.get_allocation()
+        cx = alloc.width / 2
+        cy = alloc.height / 2
+
+        cr.set_source_rgba(self.bg.red, self.bg.green, self.bg.blue, self.bg.alpha)
+        cr.paint()
+
+        n = len(self.files)
+        if n == 0:
+            return
+
+        # gather every visible slot's real (post-scale) size first — a slot whose
+        # thumbnail isn't decoded yet (first-run warmup) gets a 16:9 placeholder
+        # size so the layout below still has something to measure against.
+        slots = {}
+        for offset in range(-SLOTS, SLOTS + 1):
+            idx = (self.index + offset) % n
+            path = self.files[idx]
+            pb = self.thumbs.get(path)
+            scale = FALLOFF[min(abs(offset), len(FALLOFF) - 1)]
+            if pb is not None:
+                w, h = pb.get_width() * scale, pb.get_height() * scale
+            else:
+                h = CENTER_H * scale
+                w = h * 16 / 9
+            slots[offset] = (path, pb, scale, w, h)
+
+        # lay out cumulatively from each slot's real width, outward from center —
+        # guarantees no overlap regardless of aspect ratio (a fixed center-to-center
+        # spacing can't promise that once wide and narrow thumbnails mix).
+        pos = {0: 0.0}
+        cursor_r = slots[0][3] / 2
+        cursor_l = -slots[0][3] / 2
+        for offset in range(1, SLOTS + 1):
+            w_r = slots[offset][3]
+            cursor_r += GAP + w_r / 2
+            pos[offset] = cursor_r
+            cursor_r += w_r / 2
+
+            w_l = slots[-offset][3]
+            cursor_l -= GAP + w_l / 2
+            pos[-offset] = cursor_l
+            cursor_l -= w_l / 2
+
+        for offset, (path, pb, scale, w, h) in slots.items():
+            if pb is None:
+                continue
+            x = cx + pos[offset] - w / 2
+            y = cy - h / 2
+
+            cr.save()
+            cr.translate(x, y)
+            cr.scale(scale, scale)
+            Gdk.cairo_set_source_pixbuf(cr, pb, 0, 0)
+            cr.paint()
+            cr.restore()
+
+            # every slot gets a thin border — otherwise a dark wallpaper's edges
+            # blend straight into the picker's own dark background
+            if offset == 0:
+                a = self.accent
+                cr.set_source_rgba(a.red, a.green, a.blue, 0.9)
+                cr.set_line_width(3)
+                cr.rectangle(x - 2, y - 2, w + 4, h + 4)
+            else:
+                f = self.fg
+                cr.set_source_rgba(f.red, f.green, f.blue, 0.18)
+                cr.set_line_width(1)
+                cr.rectangle(x + 0.5, y + 0.5, w - 1, h - 1)
+            cr.stroke()
+
+    def run(self):
+        self.show_all()
+        self.realize()
+        screen_w = Gdk.Screen.width()
+        screen_h = Gdk.Screen.height()
+        win_w, win_h = self.get_size()
+        self.move((screen_w - win_w) // 2, (screen_h - win_h) // 2)
+        self._update_name()
+        self.start_loading()
+        signal.signal(signal.SIGTERM, lambda *_a: self._quit())
+        Gtk.main()
+
+
+def running_pid():
+    if not os.path.exists(PIDFILE):
+        return None
+    try:
+        pid = int(open(PIDFILE).read().strip())
+        os.kill(pid, 0)
+        return pid
+    except (ValueError, ProcessLookupError, PermissionError):
+        return None
+
+
+def main():
+    parser = argparse.ArgumentParser(prog="wpick", add_help=False)
+    parser.add_argument("-r", "--random", action="store_true")
+    parser.add_argument("-d", "--dir")
+    parser.add_argument("-h", "--help", action="store_true")
+    parser.add_argument("target", nargs="?")
+    args = parser.parse_args()
+
+    if args.help:
+        print(__doc__)
+        return 0
+
+    directory = args.dir or os.environ.get("WPICK_DIR") or os.path.expanduser("~/Pictures/Wallpapers")
+
+    if args.target:
+        if os.path.isfile(args.target):
+            apply_wallpaper(args.target)
+            return 0
+        if os.path.isdir(args.target):
+            directory = args.target
+        else:
+            print(f"wpick: not a file or directory: {args.target}", file=sys.stderr)
+            return 1
+
+    files = list_wallpapers(directory)
+    if not files:
+        notify("No wallpapers", f"No images found in {directory}")
+        return 1
+
+    if args.random:
+        apply_wallpaper(pick_random(files))
+        return 0
+
+    existing = running_pid()
+    if existing:
+        os.kill(existing, signal.SIGTERM)
+        return 0
+    with open(PIDFILE, "w") as f:
+        f.write(str(os.getpid()))
+
+    Wheel(files).run()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

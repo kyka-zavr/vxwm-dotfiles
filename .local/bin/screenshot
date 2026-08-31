@@ -1,0 +1,83 @@
+#!/bin/sh
+# screenshot — save under ~/Pictures/Screenshots and copy to clipboard
+#
+#   screenshot              drag region (crop), then swappy if installed
+#   screenshot full         entire screen now (no swappy)
+#   screenshot delay [N]    wait N sec, full screen, then swappy (for menus)
+#   screenshot select       same as default: drag region + swappy
+#
+set -eu
+
+DIR="${HOME}/Pictures/Screenshots"
+mkdir -p "$DIR"
+FILE="$DIR/shot-$(date '+%Y%m%d-%H%M%S').png"
+
+notify() {
+	if command -v dunstify >/dev/null 2>&1; then
+		dunstify -a shot -u low -t 2000 -r 9930 "$@"
+	elif command -v notify-send >/dev/null 2>&1; then
+		notify-send -a shot -t 2000 "$@"
+	fi
+}
+
+save_clip() {
+	xclip -selection clipboard -t image/png <"$FILE" 2>/dev/null || true
+}
+
+edit_swappy() {
+	if command -v swappy >/dev/null 2>&1; then
+		swappy -f "$FILE" -o "$FILE" 2>/dev/null || swappy -f "$FILE" 2>/dev/null || true
+		[ -f "$FILE" ] && save_clip
+	fi
+}
+
+# Materialgram caches GTK theme — bounce only if it was already running
+restart_materialgram() {
+	if command -v restart-if-running >/dev/null 2>&1; then
+		restart-if-running materialgram
+	elif pgrep -x materialgram >/dev/null 2>&1; then
+		pkill -x materialgram 2>/dev/null || true
+		sleep 0.15
+		pkill -9 -x materialgram 2>/dev/null || true
+		command -v materialgram >/dev/null 2>&1 && (materialgram >/dev/null 2>&1 &) &
+	fi
+}
+
+case "${1:-}" in
+delay | -d | --delay)
+	sec=${2:-3}
+	case "$sec" in *[!0-9]* | "") sec=3 ;; esac
+	notify "Screenshot in ${sec}s" "Open your menu now…"
+	(
+		sleep "$sec"
+		if import -window root "$FILE" 2>/dev/null; then
+			save_clip
+			edit_swappy
+			notify "Screenshot" "$(basename "$FILE")"
+			restart_materialgram
+		fi
+	) &
+	;;
+full | root)
+	# entire screen, no editor
+	import -window root "$FILE" || exit 1
+	save_clip
+	notify "Screenshot" "$(basename "$FILE")"
+	restart_materialgram
+	;;
+"" | select | -s | --select)
+	# drag a rectangle to crop (original Print behaviour)
+	import "$FILE" || exit 1
+	save_clip
+	edit_swappy
+	notify "Screenshot" "$(basename "$FILE")"
+	restart_materialgram
+	;;
+-h | --help | help)
+	sed -n '2,12p' "$0" | sed 's/^# \?//'
+	;;
+*)
+	echo "usage: screenshot [delay [N]|select|full]" >&2
+	exit 2
+	;;
+esac

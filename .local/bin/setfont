@@ -1,0 +1,273 @@
+#!/bin/sh
+# setfont — one font for the whole rice (bar / dmenu / clipmenu / kitty / dunst)
+# Run: setfont --help
+
+set -eu
+
+CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/rice"
+CONF="$CONF_DIR/font"
+# For primary fonts without Cyrillic (e.g. Gallant) — kitty fallback
+CYR_FALLBACK="${CYR_FALLBACK:-DejaVu Sans Mono}"
+
+usage() {
+	cat <<'EOF'
+setfont — set one monospace font for the whole rice
+
+WHAT IT UPDATES
+  bar (polybar)  reloaded live (barlaunch) — no rebuild needed
+  rofi           Alt+Space launcher — next open
+  dmenu          used by dmenu-above (cheatsheet/powermenu/wpick etc) — next open
+  clipmenu       Super+v (cmwrap) — next open
+  kitty          hot-reloads if running
+  dunst          reloads notification font
+  config file    ~/.config/rice/font  (+ mirror in ~/dotfiles if present)
+
+COMMANDS
+  setfont
+  setfont status
+      Show current family and sizes, and path to the config file.
+
+  setfont list
+  setfont -l
+      List fonts (hides Noto Sans/Serif spam by default).
+
+  setfont list mono
+      Mono / nerd-ish only.
+
+  setfont list raw | setfont list all
+      Absolutely everything fontconfig knows (incl. all Noto).
+
+  setfont pick
+  setfont -p
+      dmenu picker — same filters as list (no Noto spam).
+      Keybind: Super+Shift+t
+
+  setfont pick mono | pick raw
+      Mono-only, or full list with every Noto.
+
+  setfont apply
+  setfont --apply
+      Re-apply whatever is already saved in ~/.config/rice/font
+      (useful after editing that file by hand).
+
+  setfont "Family Name"
+      Set font family; keep existing bar and kitty sizes.
+
+  setfont "Family Name" BAR_SIZE KITTY_SIZE
+      Set family and sizes.
+        BAR_SIZE    — bar, dmenu, clipmenu, dunst  (e.g. 10)
+        KITTY_SIZE  — terminal                      (e.g. 12)
+
+  setfont help
+  setfont -h
+  setfont --help
+      Show this help.
+
+EXAMPLES
+  setfont
+  setfont list
+  setfont pick
+  setfont "JetBrainsMono Nerd Font"
+  setfont "FiraCode Nerd Font" 10 12
+  setfont "Hack Nerd Font" 11 13
+  setfont --apply
+
+INSTALL MORE FONTS (Arch examples)
+  sudo pacman -S \
+    ttf-jetbrains-mono-nerd \
+    ttf-firacode-nerd \
+    ttf-hack-nerd \
+    ttf-iosevka-nerd \
+    otf-geist-mono-nerd \
+    otf-commit-mono-nerd \
+    otf-atkinsonhyperlegiblemono-nerd
+
+CONFIG FILE FORMAT  (~/.config/rice/font)
+  line 1: family name   (e.g. JetBrainsMono Nerd Font)
+  line 2: bar size      (e.g. 10)
+  line 3: kitty size    (e.g. 12)
+  Lines starting with # are comments.
+
+NOTES
+  • Use the exact family name from:  setfont list
+  • Quote names with spaces:  setfont "Hack Nerd Font"
+  • pick/list hide Noto Sans/Serif* spam (use list raw to see them)
+  • Proportional fonts may look broken on the bar — ok for kitty/dunst
+  • dmenu/clipmenu/bar all read the config live — no rebuild or restart needed
+EOF
+}
+
+read_conf() {
+	if [ ! -f "$CONF" ]; then
+		mkdir -p "$CONF_DIR"
+		printf '%s\n' "AtkynsonMono Nerd Font" "10" "12" >"$CONF"
+	fi
+	FAMILY=$(grep -v '^#' "$CONF" | grep -v '^$' | sed -n '1p')
+	BAR_SIZE=$(grep -v '^#' "$CONF" | grep -v '^$' | sed -n '2p')
+	KITTY_SIZE=$(grep -v '^#' "$CONF" | grep -v '^$' | sed -n '3p')
+	# guard: never treat flags as a font (e.g. accidental setfont -help)
+	case "$FAMILY" in
+	"" | -*) FAMILY="AtkynsonMono Nerd Font" ;;
+	esac
+	case "$BAR_SIZE" in
+	"" | *[!0-9]*) BAR_SIZE=10 ;;
+	esac
+	case "$KITTY_SIZE" in
+	"" | *[!0-9]*) KITTY_SIZE=12 ;;
+	esac
+}
+
+write_conf() {
+	mkdir -p "$CONF_DIR"
+	{
+		echo "# rice font — setfont"
+		echo "$1"
+		echo "$2"
+		echo "$3"
+	} >"$CONF"
+	# mirror into dotfiles repo if present
+	if [ -d "$HOME/dotfiles/.config/rice" ]; then
+		cp "$CONF" "$HOME/dotfiles/.config/rice/font"
+	fi
+}
+
+# list_fonts [default|mono|raw]
+#   default — all families EXCEPT Noto Sans* / Noto Serif* flood
+#   mono    — mono / nerd-ish only
+#   raw     — absolutely everything
+list_fonts() {
+	mode=${1:-default}
+	tmp=$(mktemp)
+	fc-list : family | tr ',' '\n' | sed 's/^ *//;s/ *$//' | sed '/^$/d' | sort -u >"$tmp"
+	case "$mode" in
+	mono | -m | --mono)
+		grep -iE 'mono|nerd|code|hack|fira|jetbrains|iosevka|geist|commit|cascadia|inconsolata|meslo|agave|victor|maple|source code|atky|atkinson|envy|gohu|0xproto|comic|heavy|daddy|sauce|terminess|consolas|courier|typewriter|fixed' "$tmp" || true
+		;;
+	raw | all | -a | --all | --raw)
+		cat "$tmp"
+		;;
+	*)
+		# Hide the Noto Sans / Noto Serif flood (hundreds of CJK/script variants).
+		# Keep Noto Color Emoji, Noto Music, Kufi, etc. Use "raw" to see everything.
+		grep -v -E '^Noto Sans($| |,)|^Noto Serif($| |,)' "$tmp" || true
+		;;
+	esac
+	rm -f "$tmp"
+}
+
+apply_all() {
+	read_conf
+
+	printf 'Xft.dpi: 96\n' | xrdb -merge 2>/dev/null || true
+
+	# kitty — dim13 gallant12x22 works (scalable); map Cyrillic to DejaVu
+	mkdir -p "$HOME/.config/kitty"
+	KITTY_CONF="$HOME/.config/kitty/kitty.conf"
+	if [ -f "$KITTY_CONF" ]; then
+		tmp=$(mktemp)
+		sed "s/^font_family.*/font_family      $FAMILY/" "$KITTY_CONF" |
+			sed "s/^font_size.*/font_size        $KITTY_SIZE/" |
+			grep -v '^symbol_map U+0400' >"$tmp"
+		{
+			cat "$tmp"
+			# always provide RU fallback (Gallant has no Cyrillic)
+			printf 'symbol_map U+0400-U+04FF,U+0500-U+052F,U+2DE0-U+2DFF,U+A640-U+A69F %s\n' \
+				"$CYR_FALLBACK"
+		} >"$KITTY_CONF"
+		rm -f "$tmp"
+	else
+		printf 'font_family      %s\nfont_size        %s\nsymbol_map U+0400-U+04FF,U+0500-U+052F,U+2DE0-U+2DFF,U+A640-U+A69F %s\n' \
+			"$FAMILY" "$KITTY_SIZE" "$CYR_FALLBACK" >"$KITTY_CONF"
+	fi
+	[ -d "$HOME/dotfiles/.config/kitty" ] &&
+		cp "$KITTY_CONF" "$HOME/dotfiles/.config/kitty/kitty.conf"
+	kill -SIGUSR1 $(pgrep -x kitty) 2>/dev/null || true
+
+	# rofi — reads config fresh on every launch, no reload needed
+	ROFI_CONF="$HOME/.config/rofi/config.rasi"
+	if [ -f "$ROFI_CONF" ]; then
+		sed -i "s/^  font: .*/  font: \"$FAMILY $BAR_SIZE\";/" "$ROFI_CONF"
+		[ -d "$HOME/dotfiles/.config/rofi" ] &&
+			cp "$ROFI_CONF" "$HOME/dotfiles/.config/rofi/config.rasi"
+	fi
+
+	# dunst
+	for base in "$HOME/.config/dunst/dunstrc.base" \
+		"$HOME/.config/dunst/dunstrc" \
+		"$HOME/dotfiles/.config/dunst/dunstrc" \
+		"$HOME/dotfiles/.config/dunst/dunstrc.base"; do
+		[ -f "$base" ] || continue
+		sed -i "s/^[[:space:]]*font = .*/    font = $FAMILY $BAR_SIZE/" "$base" || true
+	done
+	dunstctl reload 2>/dev/null || { pkill -x dunst 2>/dev/null; dunst & }
+
+	# bar — polybar's font-0 is the visible one (font-1 is the fixed Nerd Font
+	# icon glyph slot, left alone or every gauge/icon in the bar breaks)
+	POLY_CONF="$HOME/.config/polybar/config.ini"
+	if [ -f "$POLY_CONF" ]; then
+		sed -i -E "s|^font-0 = .*|font-0 = $FAMILY:size=$BAR_SIZE;2|" "$POLY_CONF"
+		[ -d "$HOME/dotfiles/.config/polybar" ] &&
+			cp "$POLY_CONF" "$HOME/dotfiles/.config/polybar/config.ini"
+		command -v barlaunch >/dev/null 2>&1 && barlaunch
+	fi
+
+	printf '→ %s  (bar %s · kitty %s)\n' "$FAMILY" "$BAR_SIZE" "$KITTY_SIZE"
+	printf '  dmenu/clipmenu: next open\n'
+	printf '  kitty:          hot-reloaded if running\n'
+	printf '  bar:            reloaded live (polybar)\n'
+
+	# desktop notification (same hints as terminal)
+	body="dmenu/clipmenu: next open
+kitty: hot-reloaded if running
+bar: reloaded live (polybar)"
+	if command -v dunstify >/dev/null 2>&1; then
+		dunstify -a setfont -u low -t 5000 -r 9910 \
+			"Font: ${FAMILY}  (${BAR_SIZE}/${KITTY_SIZE})" \
+			"$body"
+	elif command -v notify-send >/dev/null 2>&1; then
+		notify-send -a setfont -t 5000 \
+			"Font: ${FAMILY}  (${BAR_SIZE}/${KITTY_SIZE})" \
+			"$body"
+	fi
+}
+
+case "${1:-}" in
+"" | status)
+	read_conf
+	printf 'family: %s\nbar:    %s\nkitty:  %s\n%s\n' \
+		"$FAMILY" "$BAR_SIZE" "$KITTY_SIZE" "$CONF"
+	;;
+list | -l)
+	list_fonts "${2:-default}"
+	;;
+pick | -p)
+	read_conf
+	set +e
+	choice=$(list_fonts "${2:-default}" | dmenu-above -p "font:" -l 12)
+	rc=$?
+	set -e
+	if [ "$rc" -ne 0 ]; then
+		echo "setfont pick failed (rc=$rc)" >&2
+		exit 1
+	fi
+	[ -n "${choice:-}" ] || exit 0
+	write_conf "$choice" "$BAR_SIZE" "$KITTY_SIZE"
+	apply_all
+	;;
+--apply | apply)
+	apply_all
+	;;
+-h | --help | help | -help)
+	usage
+	;;
+-*)
+	echo "setfont: unknown option: $1" >&2
+	echo "Try: setfont --help" >&2
+	exit 2
+	;;
+*)
+	read_conf
+	write_conf "$1" "${2:-$BAR_SIZE}" "${3:-$KITTY_SIZE}"
+	apply_all
+	;;
+esac

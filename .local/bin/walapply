@@ -1,0 +1,17 @@
+#!/bin/sh
+# Apply pywal colors to vxwm bar, dmenu, and clipmenu
+# Run after: wal -i /path/to/wallpaper.jpg
+
+XRES="$HOME/.cache/wal/colors.Xresources"
+[ -f "$XRES" ] && xrdb -merge "$XRES"
+
+DWMXRES="$HOME/.cache/wal/dwm.Xresources"
+[ -f "$DWMXRES" ] && xrdb -merge "$DWMXRES"
+
+# Reload vxwm bar colors (Mod+F5)
+xdotool key --clearmodifiers Super_L+F5 2>/dev/null
+
+# polybar reads colors via ~/.cache/wal/colors-polybar (include-file) — restart to pick it up
+command -v barlaunch >/dev/null 2>&1 && barlaunch
+
+echo "pywal applied (Mod+F5 sent, polybar restarted)"

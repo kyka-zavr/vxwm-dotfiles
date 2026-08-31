@@ -1,0 +1,12 @@
+# Shared by bash (.bashrc) and zsh (.zshrc) — rice aliases & PATH
+# Installed to: ~/.config/rice/shell-common
+
+export PATH="$HOME/.local/bin:$PATH"
+
+# --- rice aliases ---
+alias vxbuild='cd ~/dotfiles/vxwm && make && sudo make install && cp -f ~/dotfiles/vxwm/vxwm ~/.local/bin/vxwm'
+alias vxconfig='micro ~/dotfiles/vxwm/config.h'
+alias vxmod='micro ~/dotfiles/vxwm/modules.h'
+alias x='startx'
+alias ls='ls --color=auto'
+alias grep='grep --color=auto'

@@ -1,0 +1,43 @@
+#!/bin/sh
+# vol — change volume (0–100%)
+#   vol up | down | mute | [N%]
+set -eu
+
+step=${VOL_STEP:-5}
+
+get_vol() {
+	# MUST parse the "N%" field — raw Pulse values are 0..65536
+	pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null |
+		grep -oE '[0-9]+%' | head -1 | tr -d '%'
+}
+
+case "${1:-}" in
+up | +)
+	pactl set-sink-mute @DEFAULT_SINK@ 0
+	pactl set-sink-volume @DEFAULT_SINK@ "+${step}%"
+	# cap at 100%
+	v=$(get_vol)
+	if [ -n "$v" ] && [ "$v" -gt 100 ]; then
+		pactl set-sink-volume @DEFAULT_SINK@ "100%"
+	fi
+	;;
+down | -)
+	pactl set-sink-mute @DEFAULT_SINK@ 0
+	pactl set-sink-volume @DEFAULT_SINK@ "-${step}%"
+	;;
+mute | toggle)
+	pactl set-sink-mute @DEFAULT_SINK@ toggle
+	;;
+[0-9] | [0-9]% | [0-9][0-9] | [0-9][0-9]% | 100 | 100%)
+	pactl set-sink-mute @DEFAULT_SINK@ 0
+	pactl set-sink-volume @DEFAULT_SINK@ "${1%\%}%"
+	;;
+"" | get)
+	get_vol
+	exit 0
+	;;
+*)
+	echo "usage: vol up|down|mute|[0-100]" >&2
+	exit 2
+	;;
+esac

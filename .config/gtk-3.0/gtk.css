@@ -1,0 +1,9 @@
+/* Placeholder — real colors are written by setwal from pywal template.
+ * After first setwal/wpick this file is replaced with ~/.cache/wal/gtk.css
+ *
+ * Manual refresh:  setwal ~/Pictures/Wallpapers/<img>
+ */
+window, .background {
+  background-color: #1a1a1a;
+  color: #e0e0e0;
+}

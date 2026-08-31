@@ -1,0 +1,2 @@
+#!/bin/sh
+CM_HISTLENGTH=4 CM_LAUNCHER="$HOME/.local/bin/cmwrap" clipmenu

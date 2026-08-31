@@ -1,0 +1,18 @@
+#!/bin/sh
+# Load pywal colors for dmenu without `source colors.sh`
+# (colors.sh exports FZF_DEFAULT_OPTS with unbound vars → breaks under set -u)
+
+nb="#222222"
+nf="#bbbbbb"
+sb="#005577"
+sf="#eeeeee"
+
+CS="${HOME}/.cache/wal/colors.sh"
+if [ -f "$CS" ]; then
+	c0=$(awk -F"'" '/^color0=/{print $2; exit}' "$CS")
+	c4=$(awk -F"'" '/^color4=/{print $2; exit}' "$CS")
+	c7=$(awk -F"'" '/^color7=/{print $2; exit}' "$CS")
+	[ -n "$c0" ] && nb=$c0
+	[ -n "$c7" ] && nf=$c7 && sf=$c7
+	[ -n "$c4" ] && sb=$c4
+fi
