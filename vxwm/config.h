@@ -272,13 +272,9 @@ static const Button buttons[] = {
   /* .f = 1 is moving multiplier, for example if set to 0.5, canvas will move 2 times slower, if set to 2, canvas will move 2 times faster.
      If you want inverted canvas move then set the value to a negative value. */
 
-  /* touchpad two-finger scroll on the bare desktop pans the canvas (same
-     step as Super+Shift+arrows). A fast scroll-up burst opens the launcher
-     instead — see buttonpress() in vxwm.c and SWIPE_BURST_* above. */
-  { ClkRootWin,           0,              SCROLL_UP,      movecanvas,     {.i = 2} },
-  { ClkRootWin,           0,              SCROLL_DOWN,    movecanvas,     {.i = 3} },
-  { ClkRootWin,           0,              6,              movecanvas,     {.i = 0} }, /* Button6 (horiz scroll left) — not a named X11 macro */
-  { ClkRootWin,           0,              7,              movecanvas,     {.i = 1} }, /* Button7 (horiz scroll right) */
+  /* NOTE: two-finger scroll no longer pans the canvas (removed — got in the
+     way of normal scrolling). A fast scroll-up burst still opens the
+     launcher, see buttonpress() in vxwm.c and SWIPE_BURST_* above. */
 #endif
 #if ZOOM
   { ClkRootWin,           MODKEY,         SCROLL_UP,      spawn,          {.v = zoomin } },
