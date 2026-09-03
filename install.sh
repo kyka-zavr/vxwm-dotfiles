@@ -321,7 +321,7 @@ install_packages_arch() {
 		xorg-setxkbmap xorg-xrandr xdotool
 		libx11 libxinerama libxft libxcomposite libxdamage libxfixes libxrandr libdrm
 		kitty feh dmenu clipmenu stalonetray polybar rofi cava picom dunst libnotify
-		thunar gvfs exo tumbler sxiv imagemagick xclip xsel swappy micro
+		thunar gvfs exo tumbler sxiv imagemagick xclip xsel swappy micro jq code
 		brightnessctl
 		networkmanager network-manager-applet
 		bluez bluez-utils blueman
@@ -375,7 +375,7 @@ install_packages_fedora() {
 	# gtk3 + python3-gobject → calendar-popup / powermenu (GTK popups)
 	DESKTOP_PKGS="
 		kitty feh dmenu polybar rofi cava picom dunst libnotify
-		thunar gvfs tumbler ImageMagick xclip xsel micro
+		thunar gvfs tumbler ImageMagick xclip xsel micro jq code
 		brightnessctl stalonetray swappy
 		NetworkManager network-manager-applet
 		bluez blueman
@@ -573,6 +573,7 @@ install_configs() {
 	cp "$DOTFILES/.config/wal/templates/dunstrc" "$HOME/.config/wal/templates/"
 	cp "$DOTFILES/.config/wal/templates/gtk.css" "$HOME/.config/wal/templates/"
 	cp "$DOTFILES/.config/wal/templates/colors-rofi.rasi" "$HOME/.config/wal/templates/"
+	cp "$DOTFILES/.config/wal/templates/vscode-colors.json" "$HOME/.config/wal/templates/"
 	# GTK3 / Thunar (colors filled on first setwal)
 	[ -f "$DOTFILES/.config/gtk-3.0/settings.ini" ] &&
 		cp "$DOTFILES/.config/gtk-3.0/settings.ini" "$HOME/.config/gtk-3.0/"

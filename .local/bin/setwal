@@ -14,7 +14,7 @@ ensure_wal_templates() {
     "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/../../.config/wal/templates"
   do
     [ -d "$src" ] || continue
-    for f in gtk.css dunstrc dwm.Xresources colors-rofi.rasi betterlockscreenrc; do
+    for f in gtk.css dunstrc dwm.Xresources colors-rofi.rasi betterlockscreenrc vscode-colors.json; do
       if [ -f "$src/$f" ] && [ ! -f "$TDIR/$f" ]; then
         cp -f "$src/$f" "$TDIR/$f"
       fi
@@ -109,6 +109,23 @@ BLS_WAL="$HOME/.cache/wal/betterlockscreenrc"
 if [ -f "$BLS_WAL" ] && command -v betterlockscreen >/dev/null 2>&1; then
   sed -E 's/#([0-9A-Fa-f]{6,8})/\1/g' "$BLS_WAL" >"$HOME/.config/betterlockscreenrc"
   betterlockscreen -u "$1" >/dev/null 2>&1 &
+fi
+
+# Code - OSS — pywal template (theme + terminal ANSI colors) merged into
+# settings.json with jq, so any manually-set options survive. Deep merge
+# (jq's *) means workbench.colorCustomizations only gets our keys touched.
+CODE_WAL="$HOME/.cache/wal/vscode-colors.json"
+CODE_DIR="$HOME/.config/Code - OSS/User"
+if [ -f "$CODE_WAL" ] && command -v jq >/dev/null 2>&1; then
+  mkdir -p "$CODE_DIR"
+  CODE_SETTINGS="$CODE_DIR/settings.json"
+  [ -s "$CODE_SETTINGS" ] || echo '{}' >"$CODE_SETTINGS"
+  if jq -s '.[0] * .[1]' "$CODE_SETTINGS" "$CODE_WAL" >"$CODE_SETTINGS.tmp" 2>/dev/null; then
+    mv "$CODE_SETTINGS.tmp" "$CODE_SETTINGS"
+  else
+    rm -f "$CODE_SETTINGS.tmp"
+    echo "setwal: WARN could not merge Code - OSS theme (bad settings.json?)" >&2
+  fi
 fi
 
 # Reload GTK apps that cache CSS at start — only if they were already running
