@@ -204,7 +204,7 @@ static const Key keys[] = {
 	{ MODKEY|ShiftMask|ALTERNATE_MODKEY, XK_t, setlayout,      {.v = &layouts[0]} }, /* was MOD+t; MOD+Shift+t stays setfont */
 	{ MODKEY|ShiftMask|ALTERNATE_MODKEY, XK_f, setlayout,      {.v = &layouts[1]} }, /* was MOD+f; MOD+Shift+f stays fullscreen */
 	{ MODKEY|ShiftMask,             XK_m,      setlayout,      {.v = &layouts[2]} },
-	{ MODKEY|ShiftMask,             XK_space,  setlayout,      {0} },
+	{ MODKEY|ShiftMask,             XK_space,  toggletile,     {0} }, /* floating<->tile, always the other by name (see toggletile() in vxwm.c) */
 	{ MODKEY|ShiftMask|ALTERNATE_MODKEY, XK_space, togglefloating, {0} }, //default toggle floating bind.
 	TAGKEYS(                        XK_1,                      0)
 	TAGKEYS(                        XK_2,                      1)

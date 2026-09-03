@@ -283,6 +283,7 @@ static void tagmon(const Arg *arg);
 static void tile(Monitor *m);
 static void togglebar(const Arg *arg);
 static void togglefloating(const Arg *arg);
+static void toggletile(const Arg *arg);
 static void toggletag(const Arg *arg);
 static void toggleview(const Arg *arg);
 static void unfocus(Client *c, int setfocus);
@@ -1973,6 +1974,16 @@ setlayout(const Arg *arg)
     strncpy(selmon->ltsymbol, selmon->lt[selmon->sellt]->symbol, sizeof selmon->ltsymbol - 1);
     selmon->ltsymbol[sizeof selmon->ltsymbol - 1] = '\0';
     arrange(selmon);
+}
+
+/* explicit floating<->tile toggle — unlike setlayout({0}) (which just flips
+   between whatever sits in lt[0]/lt[1], and can drift to monocle if that was
+   set explicitly last), this always lands on the other of the two by name. */
+void
+toggletile(const Arg *arg)
+{
+	const Arg a = { .v = (selmon->lt[selmon->sellt]->arrange == NULL) ? &layouts[1] : &layouts[0] };
+	setlayout(&a);
 }
 /* arg > 1.0 will set mfact absolutely */
 void

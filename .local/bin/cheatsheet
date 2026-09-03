@@ -39,7 +39,7 @@ Super+Ctrl+←↑↓→            resize window (pixels)
 Super+Shift+Alt+t          floating layout
 Super+Shift+Alt+f          tiled layout
 Super+Shift+m              monocle
-Super+Shift+space          cycle layout
+Super+Shift+space          toggle floating / tile
 
 ── tags ──
 Super+1…9                  view tag

@@ -430,7 +430,7 @@ Use an **Xorg** session or `startx` from TTY — vxwm is X11-only.
 |-----|--------|
 | `Super+Shift+Alt+t` / `f` | Float / tile layout |
 | `Super+Shift+m` | Monocle |
-| `Super+Shift+space` | Cycle layout |
+| `Super+Shift+space` | Toggle floating / tile |
 
 ### Tags
 
