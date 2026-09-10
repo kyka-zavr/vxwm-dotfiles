@@ -148,7 +148,7 @@ ask_shell() {
 		return
 	fi
 
-	cur="$(basename "${SHELL:-/bin/bash}")"
+	cur="$(basename "${SHELL:-/bin/zsh}")"
 	def=1
 	case "$cur" in
 	zsh) def=2 ;;

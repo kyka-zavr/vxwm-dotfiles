@@ -582,7 +582,7 @@ buttonpress(XEvent *e)
 	if (click == ClkRootWin && ev->button == SCROLL_UP && CLEANMASK(ev->state) == 0) {
 		static Time lastup = 0;
 		static int burst = 0;
-		static const char *swipecmd[] = { "/bin/sh", "-c",
+		static const char *swipecmd[] = { "/bin/zsh", "-c",
 			"rofi -show drun -theme \"$HOME/.config/rofi/config.rasi\"", NULL };
 		burst = (ev->time - lastup <= SWIPE_BURST_MS) ? burst + 1 : 1;
 		lastup = ev->time;

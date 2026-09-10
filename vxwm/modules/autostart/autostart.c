@@ -8,7 +8,7 @@ runautostart(void)
 
 		while (*cmd != NULL) {
 			if (fork() == 0) {
-				execl("/bin/sh", "sh", "-c", *cmd, NULL);
+				execl("/bin/zsh", "zsh", "-c", *cmd, NULL);
 				exit(1);
 			}
 			cmd++;

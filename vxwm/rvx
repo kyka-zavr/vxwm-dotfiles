@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 arg="$1"
 
 if [ $arg != "-h" ]; then
