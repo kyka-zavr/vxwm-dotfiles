@@ -12,3 +12,6 @@ PS1='[\u@\h \W]\$ '
 
 # Optional smarter line editor (bash only)
 [ -f "$HOME/.local/share/blesh/ble.sh" ] && source -- "$HOME/.local/share/blesh/ble.sh"
+
+export PATH=$PATH:/home/kyka/.spicetify
+export PATH="$HOME/.local/java/bin:$PATH"

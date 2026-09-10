@@ -467,13 +467,13 @@ install_shell_configs() {
 
 	mkdir -p "$HOME/.config/rice"
 	if [ -f "$DOTFILES/.config/rice/shell-common" ]; then
-		echo "==> Shared shell aliases → ~/.config/rice/shell-common"
-		cp "$DOTFILES/.config/rice/shell-common" "$HOME/.config/rice/shell-common"
+		echo "==> Shared shell aliases → ~/.config/rice/shell-common (symlink)"
+		ln -sfn "$DOTFILES/.config/rice/shell-common" "$HOME/.config/rice/shell-common"
 	fi
 
 	if shell_wants_bash; then
-		echo "==> bash → ~/.bashrc"
-		cp "$DOTFILES/.bashrc" "$HOME/.bashrc"
+		echo "==> bash → ~/.bashrc (symlink)"
+		ln -sfn "$DOTFILES/.bashrc" "$HOME/.bashrc"
 		install_blesh
 		# Fedora login bash often only reads .bash_profile
 		ensure_path_line "$HOME/.bash_profile"
@@ -487,8 +487,8 @@ install_shell_configs() {
 			fedora) sudo dnf install -y zsh ;;
 			esac
 		fi
-		echo "==> zsh → ~/.zshrc"
-		cp "$DOTFILES/.zshrc" "$HOME/.zshrc"
+		echo "==> zsh → ~/.zshrc (symlink)"
+		ln -sfn "$DOTFILES/.zshrc" "$HOME/.zshrc"
 		ensure_path_line "$HOME/.zprofile"
 	fi
 
@@ -535,15 +535,15 @@ install_shell_configs() {
 # ── configs / build ──────────────────────────────────────────────────
 
 install_configs() {
-	echo "==> Scripts → ~/.local/bin/"
+	echo "==> Scripts → ~/.local/bin/ (symlinks)"
 	mkdir -p "$HOME/.local/bin" "$HOME/.cache/clipmenu"
 	for f in "$DOTFILES"/.local/bin/*; do
 		[ -f "$f" ] || continue
 		case "$(basename "$f")" in
 		*.md | *.txt) continue ;;
 		esac
-		cp "$f" "$HOME/.local/bin/"
-		chmod +x "$HOME/.local/bin/$(basename "$f")"
+		chmod +x "$f"
+		ln -sfn "$f" "$HOME/.local/bin/$(basename "$f")"
 	done
 
 	echo "==> App configs"
@@ -560,43 +560,64 @@ install_configs() {
 		"$HOME/Pictures/Wallpapers" \
 		"$HOME/Pictures/Screenshots"
 
-	cp "$DOTFILES/.config/kitty/kitty.conf" "$HOME/.config/kitty/"
-	cp "$DOTFILES/.config/picom/picom.conf" "$HOME/.config/picom/"
-	cp "$DOTFILES/.config/polybar/config.ini" "$HOME/.config/polybar/"
-	cp "$DOTFILES/.config/polybar/scripts/"*.sh "$HOME/.config/polybar/scripts/"
-	chmod +x "$HOME/.config/polybar/scripts/"*.sh
-	cp "$DOTFILES/.config/rofi/config.rasi" "$HOME/.config/rofi/"
-	cp "$DOTFILES/.config/cava/config" "$HOME/.config/cava/"
-	cp "$DOTFILES/.config/dunst/dunstrc" "$HOME/.config/dunst/dunstrc.base"
-	cp "$DOTFILES/.config/dunst/dunstrc" "$HOME/.config/dunst/dunstrc"
-	cp "$DOTFILES/.config/wal/templates/dwm.Xresources" "$HOME/.config/wal/templates/"
-	cp "$DOTFILES/.config/wal/templates/dunstrc" "$HOME/.config/wal/templates/"
-	cp "$DOTFILES/.config/wal/templates/gtk.css" "$HOME/.config/wal/templates/"
-	cp "$DOTFILES/.config/wal/templates/colors-rofi.rasi" "$HOME/.config/wal/templates/"
-	cp "$DOTFILES/.config/wal/templates/vscode-colors.json" "$HOME/.config/wal/templates/"
-	# GTK3 / Thunar (colors filled on first setwal)
+	# Static configs are symlinked straight to the repo so edits show up in
+	# `git status` immediately. Files pywal/setwal rewrite in place at runtime
+	# (dunstrc, gtk.css) are seeded as real copies instead — symlinking those
+	# would make wallpaper changes dirty the tracked repo file.
+	ln -sfn "$DOTFILES/.config/kitty/kitty.conf" "$HOME/.config/kitty/kitty.conf"
+	ln -sfn "$DOTFILES/.config/picom/picom.conf" "$HOME/.config/picom/picom.conf"
+	ln -sfn "$DOTFILES/.config/polybar/config.ini" "$HOME/.config/polybar/config.ini"
+	for f in "$DOTFILES"/.config/polybar/scripts/*.sh; do
+		[ -f "$f" ] || continue
+		chmod +x "$f"
+		ln -sfn "$f" "$HOME/.config/polybar/scripts/$(basename "$f")"
+	done
+	ln -sfn "$DOTFILES/.config/rofi/config.rasi" "$HOME/.config/rofi/config.rasi"
+	ln -sfn "$DOTFILES/.config/cava/config" "$HOME/.config/cava/config"
+
+	# dunst: dunstrc.base is the tracked template (symlinked); dunstrc itself
+	# gets rewritten in place by setwal on every wallpaper change, so it must
+	# stay a real file — seed it once, never touch it again here.
+	ln -sfn "$DOTFILES/.config/dunst/dunstrc.base" "$HOME/.config/dunst/dunstrc.base"
+	[ -f "$HOME/.config/dunst/dunstrc" ] ||
+		cp "$DOTFILES/.config/dunst/dunstrc.base" "$HOME/.config/dunst/dunstrc"
+
+	ln -sfn "$DOTFILES/.config/wal/templates/dwm.Xresources" "$HOME/.config/wal/templates/dwm.Xresources"
+	ln -sfn "$DOTFILES/.config/wal/templates/dunstrc" "$HOME/.config/wal/templates/dunstrc"
+	ln -sfn "$DOTFILES/.config/wal/templates/gtk.css" "$HOME/.config/wal/templates/gtk.css"
+	ln -sfn "$DOTFILES/.config/wal/templates/colors-rofi.rasi" "$HOME/.config/wal/templates/colors-rofi.rasi"
+	ln -sfn "$DOTFILES/.config/wal/templates/vscode-colors.json" "$HOME/.config/wal/templates/vscode-colors.json"
+
+	# GTK3: settings.ini is static (symlink); gtk.css is overwritten in place
+	# by setwal from the pywal cache, so it must stay a real seeded file.
 	[ -f "$DOTFILES/.config/gtk-3.0/settings.ini" ] &&
-		cp "$DOTFILES/.config/gtk-3.0/settings.ini" "$HOME/.config/gtk-3.0/"
-	[ -f "$DOTFILES/.config/gtk-3.0/gtk.css" ] &&
-		cp "$DOTFILES/.config/gtk-3.0/gtk.css" "$HOME/.config/gtk-3.0/"
+		ln -sfn "$DOTFILES/.config/gtk-3.0/settings.ini" "$HOME/.config/gtk-3.0/settings.ini"
+	if [ -f "$DOTFILES/.config/gtk-3.0/gtk.css" ] && [ ! -f "$HOME/.config/gtk-3.0/gtk.css" ]; then
+		cp "$DOTFILES/.config/gtk-3.0/gtk.css" "$HOME/.config/gtk-3.0/gtk.css"
+	fi
 	# default file manager
 	if command -v thunar >/dev/null 2>&1 && command -v xdg-mime >/dev/null 2>&1; then
 		xdg-mime default thunar.desktop inode/directory 2>/dev/null || true
 	fi
 
 	[ -f "$DOTFILES/.config/rice/font" ] &&
-		cp "$DOTFILES/.config/rice/font" "$HOME/.config/rice/font"
+		ln -sfn "$DOTFILES/.config/rice/font" "$HOME/.config/rice/font"
 	for ic in volume-white.png volume-muted-white.png; do
 		[ -f "$DOTFILES/.config/rice/$ic" ] &&
-			cp "$DOTFILES/.config/rice/$ic" "$HOME/.config/rice/$ic"
+			ln -sfn "$DOTFILES/.config/rice/$ic" "$HOME/.config/rice/$ic"
 	done
 	[ -f "$DOTFILES/.config/rice/shell-common" ] &&
-		cp "$DOTFILES/.config/rice/shell-common" "$HOME/.config/rice/shell-common"
+		ln -sfn "$DOTFILES/.config/rice/shell-common" "$HOME/.config/rice/shell-common"
 
-	echo "==> Home configs"
-	cp "$DOTFILES/.xinitrc" "$HOME/.xinitrc"
-	chmod +x "$HOME/.xinitrc"
-	cp "$DOTFILES/.stalonetrayrc" "$HOME/.stalonetrayrc"
+	echo "==> Home configs (symlinks)"
+	chmod +x "$DOTFILES/.xinitrc"
+	ln -sfn "$DOTFILES/.xinitrc" "$HOME/.xinitrc"
+	ln -sfn "$DOTFILES/.stalonetrayrc" "$HOME/.stalonetrayrc"
+
+	if [ -f "$DOTFILES/.gitconfig" ]; then
+		echo "==> git config → ~/.gitconfig (symlink)"
+		ln -sfn "$DOTFILES/.gitconfig" "$HOME/.gitconfig"
+	fi
 
 	install_shell_configs
 
