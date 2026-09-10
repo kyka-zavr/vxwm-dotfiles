@@ -159,7 +159,7 @@ static const char *powermenucmd[] = { "powermenu", NULL };
 static const char *lockcmd[] = { "betterlockscreen", "-l", "blur", NULL };
 static const char *filemanagercmd[] = { "thunar", NULL };
 static const char *chromecmd[] = { "google-chrome-stable", NULL };
-static const char *codecmd[] = { "code", NULL }; /* Code - OSS — replaces kitty as the primary Super+Return app; its integrated terminal covers the terminal-emulator role */
+static const char *codecmd[] = { "code", NULL };
 static const char *spotifycmd[] = { "spotify", NULL };
 
 #if ZOOM
@@ -180,7 +180,7 @@ static const Key keys[] = {
 	/* modifier                     key        function        argument */
 	{ ALTERNATE_MODKEY,              XK_space,  spawn,          SHCMD("rofi -show drun -theme \"$HOME/.config/rofi/config.rasi\"") }, /* rofi launcher */
 	{ MODKEY,                       XK_v,      spawn,          {.v = clipcmd } },
-  { MODKEY,                       XK_Return, spawn,          {.v = codecmd } }, /* was kitty (termcmd) — see codecmd above */
+	{ MODKEY,                       XK_Return, spawn,          {.v = termcmd } },
   { MODKEY|ShiftMask,             XK_s,      spawn,          {.v = screenshotcmd } },
   /* delay: press first, then open menus — dmenu grabs keys so Print alone can't fire while open */
   { MODKEY|ShiftMask,             XK_Print,  spawn,          {.v = screenshotdelaycmd } },
@@ -286,7 +286,7 @@ static const Button buttons[] = {
 	{ ClkLtSymbol,          0,              Button1,        setlayout,      {0} },
 	{ ClkLtSymbol,          0,              Button3,        setlayout,      {.v = &layouts[2]} },
 	{ ClkWinTitle,          0,              Button2,        swapmaster,     {0} },
-	{ ClkStatusText,        0,              Button2,        spawn,          {.v = codecmd } },
+	{ ClkStatusText,        0,              Button2,        spawn,          {.v = termcmd } },
 	{ ClkClientWin,         MODKEY,         Button1,        movemouse,      {0} },
 	{ ClkClientWin,         MODKEY,         Button2,        togglefloating, {0} },
 	{ ClkClientWin,         MODKEY,         Button3,        resizemouse,    {0} },
